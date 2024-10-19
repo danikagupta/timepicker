@@ -1,6 +1,14 @@
 import streamlit as st
 
-st.title("🎈 My new app")
-st.write(
-    "Let's start building! For help and inspiration, head over to [docs.streamlit.io](https://docs.streamlit.io/)."
-)
+tab1,tab2,tab3=st.tabs(["Main","Upload","Configure"])
+
+with tab1:
+    st.write("Main App")
+
+
+with tab2:
+    st.write("Upload App")
+
+
+with tab3:
+    st.write("Configure App")
