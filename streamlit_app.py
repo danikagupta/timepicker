@@ -7,7 +7,9 @@ import datetime
 CSV_FILE='data.csv'
 JSON_FILE='data.json'
 
-tab1,tab2,tab3=st.tabs(["Main","Upload","Configure"])
+df_comparison=pd.DataFrame()
+
+tab1,tab2,tab3=st.tabs(["Main","Upload","Status"])
 
 def create_csv(s):
     dataset=json.loads(s)
@@ -28,7 +30,7 @@ def create_csv(s):
     df_combined.to_csv(CSV_FILE, index=False)
     return
 
-def find_closest_record_before(df_combined, date_time, host_id):
+def find_closest_record_before(host_id, df_combined, date_time, duration):
   if not isinstance(date_time, pd.Timestamp):
     date_time = pd.to_datetime(date_time)
   if df_combined['end_time'].dtype.tz is not None:
@@ -41,9 +43,11 @@ def find_closest_record_before(df_combined, date_time, host_id):
   if df_filtered.empty:
     return None
   closest_record = df_filtered.loc[df_filtered['start_time'].idxmax()]
-  return closest_record['start_time']
+  closest_end_time = closest_record['start_time'] + pd.Timedelta(minutes=closest_record['duration'])
+  time_gap = date_time - closest_end_time
+  return closest_record['start_time'],closest_record['duration'],time_gap.total_seconds()/60
 
-def find_closest_record_after(df_combined, date_time, host_id):
+def find_closest_record_after(host_id, df_combined, date_time, duration):
   if not isinstance(date_time, pd.Timestamp):
     date_time = pd.to_datetime(date_time)
   if df_combined['end_time'].dtype.tz is not None:
@@ -55,22 +59,34 @@ def find_closest_record_after(df_combined, date_time, host_id):
   if df_filtered.empty:
     return None
   closest_record = df_filtered.loc[df_filtered['start_time'].idxmin()]
-  return closest_record['start_time']
+
+  end_time = date_time+ pd.Timedelta(minutes=duration)
+  time_gap = closest_record['start_time'] - end_time
+  return closest_record['start_time'],closest_record['duration'],time_gap.total_seconds()/60
 
 def find_schedule(d,t,duration=60):
+    global df_comparison
     dt = datetime.datetime.combine(d, t)
     df=pd.read_csv(CSV_FILE)
     df['start_time'] = pd.to_datetime(df['start_time'])
     df['end_time'] = pd.to_datetime(df['end_time'])
     st.title("Finding schedule...")
     unique_hosts=df['host_id'].unique()
-    st.write(f"Unique hosts: {unique_hosts}")
+    #st.write(f"Unique hosts: {unique_hosts}")
+    mylist=[]
     for host in unique_hosts:
-        st.write(f"host: {host}")
-        r1=find_closest_record_before(df,dt,host)
-        st.write(f"{host}: closest before {dt} is {r1}")
-        r2=find_closest_record_after(df,dt,host)
-        st.write(f"{host}: closest after {dt} is {r2}")
+        #st.write(f"host: {host}")
+        r1,d1,g1=find_closest_record_before(host,df,dt,duration)
+        #st.write(f"{host}: closest before {dt} is {r1}")
+        r2,d2,g2=find_closest_record_after(host,df,dt,duration)
+        #st.write(f"{host}: closest after {dt} is {r2}")
+        gmin=min(g1,g2)
+        mylist.append({'host_id':host,'new_dt':dt,'new_duration':duration,
+                       'before_st':r1,'before_duration':d1,'before_gap':g1,
+                       'after_st':r2,'after_duration':d2,'after_gap':g2,
+                       'min_gap':gmin})
+    df_comparison=pd.DataFrame(mylist)
+    df_comparison.sort_values(by='min_gap',ascending=False,inplace=True)
 
 with tab1:
     if os.path.exists('data.csv'):
@@ -78,6 +94,11 @@ with tab1:
         time=st.time_input(" ", value=None, label_visibility="collapsed")
         if date and time:
             find_schedule(date,time)
+            fields=['host_id','min_gap','new_dt','new_duration','before_st','before_duration','before_gap','after_st','after_duration','after_gap']
+            df_display=df_comparison[fields].copy()
+            df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap (mins)'},inplace=True)
+            st.write('Rename complete')
+            st.dataframe(df_display,hide_index=True,use_container_width=False)
     else:
         st.title("Please upload JSON first.")
 
@@ -94,6 +115,6 @@ with tab2:
         create_csv(file_contents)
     
 
-
 with tab3:
-    st.write("Configure App")
+    st.write("Status App")
+    st.dataframe(df_comparison,hide_index=True,use_container_width=False)
