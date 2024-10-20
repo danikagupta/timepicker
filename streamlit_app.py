@@ -11,6 +11,15 @@ df_comparison=pd.DataFrame()
 
 tab1,tab2,tab3=st.tabs(["Main","Upload","Status"])
 
+zoom_sessions={
+'14FZQXqLRSODS33uQTVVaw':'AZ2',
+'5uBBBmxkRs2ULd5cfs8Adw':'AZ5',
+'atAAAIDOQYqcONrWd0oxxg':'AZ1',
+'dZ6K_rnJTOO5S-jOUpXf3w':'AZ3',
+'di6QjKDzTA-BsECJM-lqDA':'AZ7',
+'j4IclWA4ScOUmP_grnbflg':'AZ4',
+}
+
 def create_csv(s):
     dataset=json.loads(s)
     da=dataset['data']
@@ -41,7 +50,7 @@ def find_closest_record_before(host_id, df_combined, date_time, duration):
   #st.write(f"End time type is {df_combined['end_time'].apply(type)}")
   df_filtered = df_combined[(df_combined['end_time'] <= date_time) & (df_combined['host_id'] == host_id)]
   if df_filtered.empty:
-    return None
+    return None,0,14400
   closest_record = df_filtered.loc[df_filtered['start_time'].idxmax()]
   closest_end_time = closest_record['start_time'] + pd.Timedelta(minutes=closest_record['duration'])
   time_gap = date_time - closest_end_time
@@ -57,7 +66,7 @@ def find_closest_record_after(host_id, df_combined, date_time, duration):
   #print(f"Start time type is {df_combined['start_time'].apply(type)}")
   df_filtered = df_combined[(df_combined['start_time'] > date_time) & (df_combined['host_id'] == host_id)]
   if df_filtered.empty:
-    return None
+    return None,0,14400
   closest_record = df_filtered.loc[df_filtered['start_time'].idxmin()]
 
   end_time = date_time+ pd.Timedelta(minutes=duration)
@@ -68,6 +77,7 @@ def find_schedule(d,t,duration=60):
     global df_comparison
     dt = datetime.datetime.combine(d, t)
     df=pd.read_csv(CSV_FILE)
+    df['host_id']=df['host_id'].replace(zoom_sessions)
     df['start_time'] = pd.to_datetime(df['start_time'])
     df['end_time'] = pd.to_datetime(df['end_time'])
     st.title("Finding schedule...")
@@ -117,4 +127,21 @@ with tab2:
 
 with tab3:
     st.write("Status App")
-    st.dataframe(df_comparison,hide_index=True,use_container_width=False)
+    df=pd.read_csv(CSV_FILE)
+    df['host_id']=df['host_id'].replace(zoom_sessions)
+    df['start_time'] = pd.to_datetime(df['start_time'])
+    df['end_time'] = pd.to_datetime(df['end_time'])
+    df_grouped=df.groupby('host_id').agg(
+       host_id=('host_id','min'),
+       count=('start_time','count'),
+       min_st=('start_time','min'),
+       max_st=('start_time','max'),
+       )
+    st.title("Aggregate stats")
+    unique_hosts=df['host_id'].unique()
+    st.dataframe(df_grouped,hide_index=True)
+    #host_selected = st.selectbox("Choose host",unique_hosts)
+    #if host_selected:
+    #  st.dataframe(df[df['host_id']==host_selected])
+
+
