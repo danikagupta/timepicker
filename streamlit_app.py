@@ -80,7 +80,7 @@ def find_schedule(d,t,duration=60):
     df['host_id']=df['host_id'].replace(zoom_sessions)
     df['start_time'] = pd.to_datetime(df['start_time'])
     df['end_time'] = pd.to_datetime(df['end_time'])
-    st.title(f"Finding schedule for {dt} - {duration} minutes")
+    st.title(f"Finding schedule for {dt.strftime('%b %d %H:%M')} - {duration} minutes")
     unique_hosts=df['host_id'].unique()
     #st.write(f"Unique hosts: {unique_hosts}")
     mylist=[]
@@ -108,6 +108,8 @@ with tab1:
             find_schedule(date,time,duration)
             fields=['host_id','min_gap','before_gap','after_gap','before_st','before_duration','after_st','after_duration']
             df_display=df_comparison[fields].copy()
+            df_display['before_st'] = df_display['before_st'].dt.strftime('%b %d %H:%M')
+            df_display['after_st'] = df_display['after_st'].dt.strftime('%b %d %H:%M')
             df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap',
                                        'before_st':'Start time 1', 'before_duration':'Duration 1',
                                        'after_st':'Start time 2', 'after_duration':'Duration 2',
