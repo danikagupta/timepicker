@@ -9,7 +9,7 @@ JSON_FILE='data.json'
 
 df_comparison=pd.DataFrame()
 
-tab1,tab2,tab3=st.tabs(["Main","Upload","Status"])
+tab1,tab2,tab3,tab4,tab5=st.tabs(["Main","Upload","Status","Overlaps","Busy-ness"])
 
 zoom_sessions={
 '14FZQXqLRSODS33uQTVVaw':'AZ2',
@@ -38,6 +38,29 @@ def create_csv(s):
     print(f"{ke} df: \n{df_combined.info()}")
     df_combined.to_csv(CSV_FILE, index=False)
     return
+
+def find_overlaps(df):
+    overlaps = []
+
+    # Sort by hostid and start-time for easier processing
+    new_df = df.copy()
+    new_df = new_df.sort_values(by=['host_id', 'start_time', 'end_time'])
+
+    # Iterate through each hostid
+    for _, group in new_df.groupby('host_id'):
+        for i in range(len(group)):
+            session_i = group.iloc[i]
+            for j in range(i+1, len(group)):
+                session_j = group.iloc[j]
+                # Check if sessions overlap: session_i end-time > session_j start-time and vice versa
+                if session_i['end_time'] > session_j['start_time']:
+                    overlaps.append({'host-id':session_i['host_id'], 
+                                     'Topic 1':session_i['start_time'], 
+                                     'Session 1':session_i['topic'],
+                                     'Topic 2':session_j['topic'],
+                                     'Session 2':session_j['start_time'],})
+    return overlaps
+
 
 def find_closest_record_before(host_id, df_combined, date_time, duration):
   if not isinstance(date_time, pd.Timestamp):
@@ -152,8 +175,23 @@ with tab3:
     st.title("Aggregate stats")
     unique_hosts=df['host_id'].unique()
     st.dataframe(df_grouped,hide_index=True)
-    #host_selected = st.selectbox("Choose host",unique_hosts)
-    #if host_selected:
-    #  st.dataframe(df[df['host_id']==host_selected])
+
+with tab4:
+    overlaps=find_overlaps(df)
+    if overlaps:
+        st.title(f"Found {len(overlaps)} overlapping sessions")
+        print("Overlapping Sessions Found:")
+        df_overlaps=pd.DataFrame(overlaps)
+        st.dataframe(df_overlaps, hide_index=True)
+    else:
+        st.title("No overlapping sessions found.")
+        #host_selected = st.selectbox("Choose host",unique_hosts)
+        #if host_selected:
+        #  st.dataframe(df[df['host_id']==host_selected])
+
+with tab5:
+   st.title("Work-in-progress")
+
+
 
 
