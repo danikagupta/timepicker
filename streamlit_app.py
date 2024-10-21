@@ -80,7 +80,7 @@ def find_schedule(d,t,duration=60):
     df['host_id']=df['host_id'].replace(zoom_sessions)
     df['start_time'] = pd.to_datetime(df['start_time'])
     df['end_time'] = pd.to_datetime(df['end_time'])
-    st.title("Finding schedule...")
+    st.title(f"Finding schedule for {dt} - {duration} minutes")
     unique_hosts=df['host_id'].unique()
     #st.write(f"Unique hosts: {unique_hosts}")
     mylist=[]
@@ -104,10 +104,10 @@ with tab1:
         time=st.time_input(" ", value=None, label_visibility="collapsed")
         if date and time:
             find_schedule(date,time)
-            fields=['host_id','min_gap','new_dt','new_duration','before_st','before_duration','before_gap','after_st','after_duration','after_gap']
+            fields=['host_id','min_gap','before_gap','after_gap','before_st','before_duration','after_st','after_duration']
             df_display=df_comparison[fields].copy()
-            df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap (mins)'},inplace=True)
-            st.write('Rename complete')
+            df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap'},inplace=True)
+            #st.write('Rename complete')
             st.dataframe(df_display,hide_index=True,use_container_width=False)
     else:
         st.title("Please upload JSON first.")
