@@ -3,13 +3,14 @@ import json
 import pandas as pd
 import os
 import datetime
+import altair as alt
 
 CSV_FILE='data.csv'
 JSON_FILE='data.json'
 
 df_comparison=pd.DataFrame()
 
-tab1,tab2,tab3,tab4,tab5=st.tabs(["Main","Upload","Status","Overlaps","Busy-ness"])
+tab1,tab2,tab3,tab4,tab5,tab6=st.tabs(["Main","Upload","Status","Overlaps","Busy","Daily"])
 
 zoom_sessions={
 '14FZQXqLRSODS33uQTVVaw':'AZ2',
@@ -190,8 +191,52 @@ with tab4:
         #  st.dataframe(df[df['host_id']==host_selected])
 
 with tab5:
-   st.title("Work-in-progress")
+  st.title("Busy time intervals")
+  df=pd.read_csv(CSV_FILE)
+  df['host_id']=df['host_id'].replace(zoom_sessions)
+  df['start_time'] = pd.to_datetime(df['start_time'])
+  df['end_time'] = pd.to_datetime(df['end_time'])
+  overall_start_time = df['start_time'].min().floor('H')
+  overall_end_time = df['end_time'].max()
+  hourly_intervals = pd.date_range(start=overall_start_time, end=overall_end_time, freq='h')
+  result_df = pd.DataFrame({'interval': hourly_intervals})
+  for hostid, group in df.groupby('host_id'):
+    result_df[hostid] = 0 
+    for i,interval in enumerate(hourly_intervals):
+        # Check if the interval falls within any session for this host
+        live = any((group['start_time'] <= interval) & (group['end_time'] > interval))
+        if live:
+           result_df.at[i,hostid]=1
+  result_df['busy_hosts_count'] = result_df.iloc[:, 1:].sum(axis=1)
+  result_df['interval'] = result_df['interval'] #.dt.strftime('%b %d %H:%M')
+  chart = alt.Chart(result_df).mark_line(point=True).encode(
+    x='interval:T',  # Time on the X axis
+    y='busy_hosts_count:Q',  # Busy host count on the Y axis
+    tooltip=['interval:T', 'busy_hosts_count:Q']  # Tooltips for interactivity
+    ).properties(
+    title='Number of Busy Hosts Over Time'
+    )
 
+  st.altair_chart(chart, use_container_width=True)
+  st.dataframe(result_df, hide_index=True)
+
+with tab6:
+  st.title("Daily sessions")
+  df=pd.read_csv(CSV_FILE)
+  df['host_id']=df['host_id'].replace(zoom_sessions)
+  df['start_time'] = pd.to_datetime(df['start_time'])
+  df['end_time'] = pd.to_datetime(df['end_time'])
+  df['date'] = df['start_time'].dt.date
+  daily_sessions_df = df.groupby('date').size().reset_index(name='session_count')
+  chart = alt.Chart(daily_sessions_df).mark_bar().encode(
+      x='date:T',  # Date on the X-axis
+      y='session_count:Q',  # Number of sessions on the Y-axis
+      tooltip=['date:T', 'session_count:Q']  # Tooltips for interactivity
+  ).properties(
+      title='Number of Sessions Per Day'
+  )
+  st.altair_chart(chart, use_container_width=True)
+  st.dataframe(daily_sessions_df,hide_index=True)
 
 
 
