@@ -100,13 +100,18 @@ def find_schedule(d,t,duration=60):
 
 with tab1:
     if os.path.exists('data.csv'):
-        date=st.date_input("Find Zoom for: ", value=None)
-        time=st.time_input(" ", value=None, label_visibility="collapsed")
-        if date and time:
-            find_schedule(date,time)
+        col1,col2,col3=st.columns(3)
+        date=col1.date_input("Find Zoom for: ", value=None)
+        time=col2.time_input("Time", value=None)
+        duration=col3.number_input("Duration", value=60)
+        if date and time and duration:
+            find_schedule(date,time,duration)
             fields=['host_id','min_gap','before_gap','after_gap','before_st','before_duration','after_st','after_duration']
             df_display=df_comparison[fields].copy()
-            df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap'},inplace=True)
+            df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap',
+                                       'before_st':'Start time 1', 'before_duration':'Duration 1',
+                                       'after_st':'Start time 2', 'after_duration':'Duration 2',
+                                       },inplace=True)
             #st.write('Rename complete')
             st.dataframe(df_display,hide_index=True,use_container_width=False)
     else:
