@@ -80,7 +80,7 @@ def find_schedule(d,t,duration=60):
     df['host_id']=df['host_id'].replace(zoom_sessions)
     df['start_time'] = pd.to_datetime(df['start_time'])
     df['end_time'] = pd.to_datetime(df['end_time'])
-    st.title(f"Finding schedule for {dt.strftime('%b %d %H:%M')} - {duration} minutes")
+    st.title(f"{duration} mins for {dt.strftime('%b %d %H:%M')}")
     unique_hosts=df['host_id'].unique()
     #st.write(f"Unique hosts: {unique_hosts}")
     mylist=[]
@@ -144,6 +144,11 @@ with tab3:
        min_st=('start_time','min'),
        max_st=('start_time','max'),
        )
+    df_grouped['min_st'] = df_grouped['min_st'].dt.strftime('%b %d %H:%M')
+    df_grouped['max_st'] = df_grouped['max_st'].dt.strftime('%b %d %H:%M')
+    df_grouped.rename(columns={'min_st':'Earliest','max_st':'Latest',
+                            'count':'Sessions',
+                            },inplace=True)
     st.title("Aggregate stats")
     unique_hosts=df['host_id'].unique()
     st.dataframe(df_grouped,hide_index=True)
