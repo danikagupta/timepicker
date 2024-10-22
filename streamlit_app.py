@@ -2,15 +2,22 @@ import streamlit as st
 import json
 import pandas as pd
 import os
-import datetime
+from datetime import datetime
+import pytz
+
 import altair as alt
 
 CSV_FILE='data.csv'
 JSON_FILE='data.json'
 
+#
+# All internal calculations are in UTC
+# Convert to user-friendly timezones at IO
+#
+
 df_comparison=pd.DataFrame()
 
-tab1,tab2,tab3,tab4,tab5,tab6=st.tabs(["Main","Upload","Status","Overlaps","Busy","Daily"])
+tab1,tab2,tab3,tab4,tab5,tab6=st.tabs(["Main","Upload","Date range","Overlaps","Busy","Daily"])
 
 zoom_sessions={
 '14FZQXqLRSODS33uQTVVaw':'AZ2',
@@ -67,57 +74,79 @@ def find_closest_record_before(host_id, df_combined, date_time, duration):
   if not isinstance(date_time, pd.Timestamp):
     date_time = pd.to_datetime(date_time)
   if df_combined['end_time'].dtype.tz is not None:
-    date_time = date_time.tz_localize('UTC')  # or use tz_convert('UTC') if it already has a timezone
+    #date_time = date_time.tz_localize('UTC')  # or use tz_convert('UTC') if it already has a timezone
+    date_time = date_time.tz_convert('UTC')  # or use tz_localize('UTC') if it does not has a timezone
 
   #st.write(f"Date time is {date_time} with type {type(date_time)}")
   #st.write(f"Start time type is {df_combined['start_time'].apply(type)}")
   #st.write(f"End time type is {df_combined['end_time'].apply(type)}")
   df_filtered = df_combined[(df_combined['end_time'] <= date_time) & (df_combined['host_id'] == host_id)]
   if df_filtered.empty:
-    return None,0,14400
+    return 'N.A.',None,14400
   closest_record = df_filtered.loc[df_filtered['start_time'].idxmax()]
   closest_end_time = closest_record['start_time'] + pd.Timedelta(minutes=closest_record['duration'])
   time_gap = date_time - closest_end_time
-  return closest_record['start_time'],closest_record['duration'],time_gap.total_seconds()/60
+  return closest_record['topic'],closest_record['end_time'],time_gap.total_seconds()/60
 
 def find_closest_record_after(host_id, df_combined, date_time, duration):
   if not isinstance(date_time, pd.Timestamp):
     date_time = pd.to_datetime(date_time)
   if df_combined['end_time'].dtype.tz is not None:
-    date_time = date_time.tz_localize('UTC')  # or use tz_convert('UTC') if it already has a timezone
+    #date_time = date_time.tz_localize('UTC')  # or use tz_convert('UTC') if it already has a timezone
+    date_time = date_time.tz_convert('UTC')  # or use tz_localize('UTC') if it does not has a timezone
 
   #print(f"Date time is {date_time} with type {type(date_time)}")
   #print(f"Start time type is {df_combined['start_time'].apply(type)}")
-  df_filtered = df_combined[(df_combined['start_time'] > date_time) & (df_combined['host_id'] == host_id)]
+  df_filtered = df_combined[(df_combined['start_time'] >= date_time) & (df_combined['host_id'] == host_id)]
   if df_filtered.empty:
-    return None,0,14400
+    return 'N.A.',None,14400
   closest_record = df_filtered.loc[df_filtered['start_time'].idxmin()]
 
   end_time = date_time+ pd.Timedelta(minutes=duration)
   time_gap = closest_record['start_time'] - end_time
-  return closest_record['start_time'],closest_record['duration'],time_gap.total_seconds()/60
+  return closest_record['topic'],closest_record['start_time'],time_gap.total_seconds()/60
+
+def convert_date_time_from_pacific_to_utc(d,t): 
+  dt = datetime.combine(d, t)
+  pacific = pytz.timezone('US/Pacific')
+  pacific_time = pacific.localize(dt)
+  utc_time = pacific_time.astimezone(pytz.utc)
+  return utc_time
+
+def convert_utc_to_pacific_display(utc_time):
+    if pd.isna(utc_time):
+        return None
+    if utc_time.tzinfo is None:
+        utc_time = pytz.utc.localize(utc_time)
+    print(f"UTC time is: {utc_time}")
+    pacific = pytz.timezone('US/Pacific')
+    pacific_time = utc_time.astimezone(pacific)
+    formatted_pacific_time = pacific_time.strftime("%b %d, %I:%M %p")
+    return formatted_pacific_time
+   
 
 def find_schedule(d,t,duration=60):
     global df_comparison
-    dt = datetime.datetime.combine(d, t)
+    #dt = datetime.datetime.combine(d, t)
+    dt = convert_date_time_from_pacific_to_utc(d,t)
     df=pd.read_csv(CSV_FILE)
     df['host_id']=df['host_id'].replace(zoom_sessions)
     df['start_time'] = pd.to_datetime(df['start_time'])
     df['end_time'] = pd.to_datetime(df['end_time'])
-    st.title(f"{duration} mins for {dt.strftime('%b %d %H:%M')}")
+    st.title(f"{duration} mins for {convert_utc_to_pacific_display(dt)}")
     unique_hosts=df['host_id'].unique()
     #st.write(f"Unique hosts: {unique_hosts}")
     mylist=[]
     for host in unique_hosts:
         #st.write(f"host: {host}")
-        r1,d1,g1=find_closest_record_before(host,df,dt,duration)
+        t1,r1,g1=find_closest_record_before(host,df,dt,duration)
         #st.write(f"{host}: closest before {dt} is {r1}")
-        r2,d2,g2=find_closest_record_after(host,df,dt,duration)
+        t2,r2,g2=find_closest_record_after(host,df,dt,duration)
         #st.write(f"{host}: closest after {dt} is {r2}")
         gmin=min(g1,g2)
         mylist.append({'host_id':host,'new_dt':dt,'new_duration':duration,
-                       'before_st':r1,'before_duration':d1,'before_gap':g1,
-                       'after_st':r2,'after_duration':d2,'after_gap':g2,
+                       'before_topic':t1,'before_et':r1,'before_gap':g1,
+                       'after_topic':t2,'after_st':r2,'after_gap':g2,
                        'min_gap':gmin})
     df_comparison=pd.DataFrame(mylist)
     df_comparison.sort_values(by='min_gap',ascending=False,inplace=True)
@@ -126,23 +155,22 @@ with tab1:
     if os.path.exists('data.csv'):
         col1,col2,col3=st.columns(3)
         date=col1.date_input("Find Zoom for: ", value=None)
-        time=col2.time_input("Time", value=None)
+        time=col2.time_input("Time (Pacific)", value=None)
         duration=col3.number_input("Duration", value=60)
         if date and time and duration:
             find_schedule(date,time,duration)
-            fields=['host_id','min_gap','before_gap','after_gap','before_st','before_duration','after_st','after_duration']
+            fields=['host_id','min_gap','before_gap','after_gap','before_topic','before_et','after_topic','after_st']
             df_display=df_comparison[fields].copy()
-            df_display['before_st'] = df_display['before_st'].dt.strftime('%b %d %H:%M')
-            df_display['after_st'] = df_display['after_st'].dt.strftime('%b %d %H:%M')
+            df_display['before_et'] = df_display['before_et'].apply(convert_utc_to_pacific_display)
+            df_display['after_st'] = df_display['after_st'].apply(convert_utc_to_pacific_display)
             df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap',
-                                       'before_st':'Start time 1', 'before_duration':'Duration 1',
-                                       'after_st':'Start time 2', 'after_duration':'Duration 2',
+                                       'before_topic':'Topic 1','before_et':'End time 1',
+                                       'after_topic':'Topic 2','after_st':'Start time 2',
                                        },inplace=True)
             #st.write('Rename complete')
             st.dataframe(df_display,hide_index=True,use_container_width=False)
     else:
         st.title("Please upload JSON first.")
-
 
 with tab2:
     uploaded_file = st.file_uploader(
@@ -157,7 +185,6 @@ with tab2:
     
 
 with tab3:
-    st.write("Status App")
     df=pd.read_csv(CSV_FILE)
     df['host_id']=df['host_id'].replace(zoom_sessions)
     df['start_time'] = pd.to_datetime(df['start_time'])
@@ -168,12 +195,12 @@ with tab3:
        min_st=('start_time','min'),
        max_st=('start_time','max'),
        )
-    df_grouped['min_st'] = df_grouped['min_st'].dt.strftime('%b %d %H:%M')
-    df_grouped['max_st'] = df_grouped['max_st'].dt.strftime('%b %d %H:%M')
+    df_grouped['min_st'] = df_grouped['min_st'].apply(convert_utc_to_pacific_display)
+    df_grouped['max_st'] = df_grouped['max_st'].apply(convert_utc_to_pacific_display)
     df_grouped.rename(columns={'min_st':'Earliest','max_st':'Latest',
                             'count':'Sessions',
                             },inplace=True)
-    st.title("Aggregate stats")
+    st.title("Session information available")
     unique_hosts=df['host_id'].unique()
     st.dataframe(df_grouped,hide_index=True)
 
@@ -237,6 +264,4 @@ with tab6:
   )
   st.altair_chart(chart, use_container_width=True)
   st.dataframe(daily_sessions_df,hide_index=True)
-
-
 
