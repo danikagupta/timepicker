@@ -3,6 +3,8 @@ import json
 import pandas as pd
 import os
 from datetime import datetime
+from datetime import timedelta
+
 import pytz
 
 import altair as alt
@@ -16,6 +18,8 @@ JSON_FILE='data.json'
 #
 
 df_comparison=pd.DataFrame()
+df_before=pd.DataFrame()
+df_after=pd.DataFrame()
 
 tab1,tab2,tab3,tab4,tab5,tab6=st.tabs(["Main","Upload","Date range","Overlaps","Busy","Daily"])
 
@@ -118,25 +122,27 @@ def convert_utc_to_pacific_display(utc_time):
         return None
     if utc_time.tzinfo is None:
         utc_time = pytz.utc.localize(utc_time)
-    print(f"UTC time is: {utc_time}")
+    #print(f"UTC time is: {utc_time}")
     pacific = pytz.timezone('US/Pacific')
     pacific_time = utc_time.astimezone(pacific)
     formatted_pacific_time = pacific_time.strftime("%b %d, %I:%M %p")
     return formatted_pacific_time
    
 
-def find_schedule(d,t,duration=60):
-    global df_comparison
-    #dt = datetime.datetime.combine(d, t)
-    dt = convert_date_time_from_pacific_to_utc(d,t)
+def find_schedule(d,t,duration=60,w=0):
+    global df_comparison, df_before, df_after
+    #dt = datetime.datetime.combine(d+timedelta(weeks=w), t)
+    dt = convert_date_time_from_pacific_to_utc(d+timedelta(weeks=w),t)
     df=pd.read_csv(CSV_FILE)
     df['host_id']=df['host_id'].replace(zoom_sessions)
     df['start_time'] = pd.to_datetime(df['start_time'])
     df['end_time'] = pd.to_datetime(df['end_time'])
-    st.title(f"{duration} mins for {convert_utc_to_pacific_display(dt)}")
+    st.sidebar.write(f"{duration} mins for {convert_utc_to_pacific_display(dt)}")
     unique_hosts=df['host_id'].unique()
     #st.write(f"Unique hosts: {unique_hosts}")
     mylist=[]
+    beforeList=[]
+    afterList=[]
     for host in unique_hosts:
         #st.write(f"host: {host}")
         t1,r1,g1=find_closest_record_before(host,df,dt,duration)
@@ -148,27 +154,71 @@ def find_schedule(d,t,duration=60):
                        'before_topic':t1,'before_et':r1,'before_gap':g1,
                        'after_topic':t2,'after_st':r2,'after_gap':g2,
                        'min_gap':gmin})
+        beforeList.append({'host_id':host,'dt':dt,'duration':duration,
+                       'topic':t1,'et':r1,'gap':g1,})
+        afterList.append({'host_id':host,'dt':dt,'duration':duration,
+                       'topic':t2,'st':r2,'gap':g2,})
     df_comparison=pd.DataFrame(mylist)
     df_comparison.sort_values(by='min_gap',ascending=False,inplace=True)
+    df_before=pd.DataFrame(beforeList)
+    df_after=pd.DataFrame(afterList)
 
 with tab1:
     if os.path.exists('data.csv'):
-        col1,col2,col3=st.columns(3)
+        col1,col2,col3,col4=st.columns(4)
         date=col1.date_input("Find Zoom for: ", value=None)
         time=col2.time_input("Time (Pacific)", value=None)
         duration=col3.number_input("Duration", value=60)
-        if date and time and duration:
-            find_schedule(date,time,duration)
+        repeat=col4.number_input("Repeat", value=1)
+        if date and time and duration and repeat:
+            df_combined=pd.DataFrame()
+            df_combined_before=pd.DataFrame()
+            df_combined_after=pd.DataFrame()
+            for i in range(repeat):
+              find_schedule(date,time,duration,i)
+              df_combined=pd.concat([df_combined,df_comparison], ignore_index=True)
+              df_combined_before=pd.concat([df_combined_before,df_before], ignore_index=True)
+              df_combined_after=pd.concat([df_combined_after,df_after], ignore_index=True)
+            # Now combine
+            idx_before=df_combined_before.groupby('host_id')['gap'].idxmin()
+            df_min_before=df_combined_before.loc[idx_before]
+            df_min_before=df_min_before.reset_index(drop=True)
+            idx_after=df_combined_after.groupby('host_id')['gap'].idxmin()
+            df_min_after=df_combined_after.loc[idx_before]
+            df_min_after=df_min_after.reset_index(drop=True)
+            df_min=pd.merge(df_min_before,df_min_after,on='host_id',suffixes=('_before','_after'))
+            df_min['min_gap'] = df_min[['gap_before', 'gap_after']].min(axis=1)
+            # Old way
             fields=['host_id','min_gap','before_gap','after_gap','before_topic','before_et','after_topic','after_st']
-            df_display=df_comparison[fields].copy()
-            df_display['before_et'] = df_display['before_et'].apply(convert_utc_to_pacific_display)
-            df_display['after_st'] = df_display['after_st'].apply(convert_utc_to_pacific_display)
-            df_display.rename(columns={'host_id':'Host','min_gap':'Minimum gap',
+            df_display_old=df_combined[fields].copy()
+            df_display_old['before_et'] = df_display_old['before_et'].apply(convert_utc_to_pacific_display)
+            df_display_old['after_st'] = df_display_old['after_st'].apply(convert_utc_to_pacific_display)
+            df_display_old.rename(columns={'host_id':'Host','min_gap':'Minimum gap',
                                        'before_topic':'Topic 1','before_et':'End time 1',
                                        'after_topic':'Topic 2','after_st':'Start time 2',
                                        },inplace=True)
-            #st.write('Rename complete')
-            st.dataframe(df_display,hide_index=True,use_container_width=False)
+            #Now display
+            fields=['host_id','min_gap','gap_before','gap_after','topic_before','et','topic_after','st']
+            df_display_new=df_min[fields].copy()
+            df_display_new['et'] = df_display_new['et'].apply(convert_utc_to_pacific_display)
+            df_display_new['st'] = df_display_new['st'].apply(convert_utc_to_pacific_display)
+            df_display_new.sort_values(by='min_gap',ascending=False,inplace=True)
+            df_display_new.rename(columns={'host_id':'Host','min_gap':'Minimum gap',
+                                       'topic_before':'Topic 1','et':'End time 1',
+                                       'topic_after':'Topic 2','st':'Start time 2',
+                                       },inplace=True)
+
+            st.dataframe(df_display_new,hide_index=True)
+            with st.sidebar.expander("Raw data"):
+              st.dataframe(df_min,hide_index=True)
+            with st.sidebar.expander("Old way"):
+              st.dataframe(df_display_old,hide_index=True,use_container_width=False)
+            with st.sidebar.expander("Details - Complete"):
+               st.dataframe(df_combined_before)
+               st.dataframe(df_combined_after)
+            with st.sidebar.expander("Details - Min"):
+               st.dataframe(df_min_before)
+               st.dataframe(df_min_after)
     else:
         st.title("Please upload JSON first.")
 
@@ -207,7 +257,7 @@ with tab3:
 with tab4:
     overlaps=find_overlaps(df)
     if overlaps:
-        st.title(f"Found {len(overlaps)} overlapping sessions")
+        st.write(f"Found {len(overlaps)} overlapping sessions")
         print("Overlapping Sessions Found:")
         df_overlaps=pd.DataFrame(overlaps)
         st.dataframe(df_overlaps, hide_index=True)
@@ -223,7 +273,7 @@ with tab5:
   df['host_id']=df['host_id'].replace(zoom_sessions)
   df['start_time'] = pd.to_datetime(df['start_time'])
   df['end_time'] = pd.to_datetime(df['end_time'])
-  overall_start_time = df['start_time'].min().floor('H')
+  overall_start_time = df['start_time'].min().floor('h')
   overall_end_time = df['end_time'].max()
   hourly_intervals = pd.date_range(start=overall_start_time, end=overall_end_time, freq='h')
   result_df = pd.DataFrame({'interval': hourly_intervals})
