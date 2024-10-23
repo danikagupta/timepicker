@@ -184,7 +184,7 @@ with tab1:
             df_min_before=df_combined_before.loc[idx_before]
             df_min_before=df_min_before.reset_index(drop=True)
             idx_after=df_combined_after.groupby('host_id')['gap'].idxmin()
-            df_min_after=df_combined_after.loc[idx_before]
+            df_min_after=df_combined_after.loc[idx_after]
             df_min_after=df_min_after.reset_index(drop=True)
             df_min=pd.merge(df_min_before,df_min_after,on='host_id',suffixes=('_before','_after'))
             df_min['min_gap'] = df_min[['gap_before', 'gap_after']].min(axis=1)
@@ -221,6 +221,8 @@ with tab1:
                st.dataframe(df_min_after)
     else:
         st.title("Please upload JSON first.")
+        if st.button("Refresh"):
+          st.rerun()
 
 with tab2:
     uploaded_file = st.file_uploader(
@@ -232,8 +234,9 @@ with tab2:
             f.write(file_contents)
             f.close()
         create_csv(file_contents)
+    if st.button("Refresh!"):
+     st.rerun()
     
-
 with tab3:
     df=pd.read_csv(CSV_FILE)
     df['host_id']=df['host_id'].replace(zoom_sessions)
@@ -253,6 +256,10 @@ with tab3:
     st.title("Session information available")
     unique_hosts=df['host_id'].unique()
     st.dataframe(df_grouped,hide_index=True)
+    file_size=os.path.getsize(CSV_FILE)
+    file_ts=datetime.fromtimestamp(os.path.getmtime(CSV_FILE))
+    st.write(f"{file_size//1024} KB on {convert_utc_to_pacific_display(file_ts)} ")
+    #st.rerun()
 
 with tab4:
     overlaps=find_overlaps(df)
@@ -296,6 +303,8 @@ with tab5:
 
   st.altair_chart(chart, use_container_width=True)
   st.dataframe(result_df, hide_index=True)
+  if st.button("Refresh!!"):
+    st.rerun()
 
 with tab6:
   st.title("Daily sessions")
@@ -314,4 +323,6 @@ with tab6:
   )
   st.altair_chart(chart, use_container_width=True)
   st.dataframe(daily_sessions_df,hide_index=True)
+  if st.button("Refresh it"):
+     st.rerun()
 
