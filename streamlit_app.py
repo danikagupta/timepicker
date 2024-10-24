@@ -5,6 +5,10 @@ import os
 from datetime import datetime
 from datetime import timedelta
 
+from zoom_integration import get_schedules
+
+import requests
+
 import pytz
 
 import altair as alt
@@ -21,7 +25,7 @@ df_comparison=pd.DataFrame()
 df_before=pd.DataFrame()
 df_after=pd.DataFrame()
 
-tab1,tab2,tab3,tab4,tab5,tab6=st.tabs(["Main","Upload","Date range","Overlaps","Busy","Daily"])
+tab1,tab2,tab2b, tab3,tab4,tab5,tab6=st.tabs(["Main","Upload","Web Fetch","Date range","Overlaps","Busy","Daily"])
 
 zoom_sessions={
 '14FZQXqLRSODS33uQTVVaw':'AZ2',
@@ -37,6 +41,23 @@ def create_csv(s):
     da=dataset['data']
     me=dataset['data']['meetings']
     ne=dataset['data']['nextPageTokens']
+    df_combined=pd.DataFrame()
+    for ke,_ in me.items():
+        upc=me[ke]['upcoming']
+        ses=upc['sessions']
+        print(f"{ke} upc-ses: {ses}")
+        df_new=pd.DataFrame(ses)
+        if not df_new.empty:
+            df_new['start_time'] = pd.to_datetime(df_new['start_time'])
+            df_new['end_time'] = df_new['start_time']+pd.to_timedelta(df_new['duration'], unit='m')
+            df_combined = pd.concat([df_combined, df_new], ignore_index=True)
+    print(f"{ke} df: \n{df_combined.info()}")
+    df_combined.to_csv(CSV_FILE, index=False)
+    return
+
+def create_csv2(s):
+    dataset=json.loads(s)
+    me=dataset['meetings']
     df_combined=pd.DataFrame()
     for ke,_ in me.items():
         upc=me[ke]['upcoming']
@@ -236,6 +257,57 @@ with tab2:
         create_csv(file_contents)
     if st.button("Refresh!"):
      st.rerun()
+
+with tab2b:
+  if st.button("Fetch from Zoom API"):
+    st.write("Fetching with Zoom API")
+    d=get_schedules()
+    if d:
+    # Save the JSON response to a file
+      with open(JSON_FILE, 'w') as file:
+        file.write(json.dumps(d))
+      st.write(f'Response data saved to {JSON_FILE}')
+      with open(JSON_FILE,'r') as f:
+        file_contents=f.read()
+      create_csv2(file_contents)
+    else:
+      st.write(f"Failed to fetch data.")
+    st.write("Completed fetching the Zoom API")
+
+
+xxx="""
+with tab2b:
+  if st.button("Fetch from Web"):
+    authcode=st.secrets['GLOBALZOOM_AUTH_CODE']
+    url = 'https://apigateway.navigator.pyxeda.ai/dashboard-2.0/global-zoom-view?userIds=%5B%5D&meetingTypes=%5B%22upcoming%22,%22live%22%5D&limit=200'
+    headers = {
+        'accept': 'application/json, text/plain, */*',
+        'accept-language': 'en-US,en;q=0.9',
+        'authorization': authcode,
+        'origin': 'https://my.aiclub.world',
+        'priority': 'u=1, i',
+        'referer': 'https://my.aiclub.world/',
+        'sec-ch-ua': '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'cross-site',
+        'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code == 200:
+    # Save the JSON response to a file
+      with open(JSON_FILE, 'w') as file:
+        file.write(response.text)
+      st.write(f'Response data saved to {JSON_FILE}')
+      with open(JSON_FILE,'r') as f:
+        file_contents=f.read()
+      create_csv(file_contents)
+    else:
+      st.write(f"Failed to fetch data. Status code: {response.status_code}")
+"""
+
     
 with tab3:
     df=pd.read_csv(CSV_FILE)
